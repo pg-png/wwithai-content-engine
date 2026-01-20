@@ -23,13 +23,14 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
  * @param {string} params.userId - Telegram user ID
  * @param {string} params.chatId - Telegram chat ID
  * @param {string} [params.restaurantName] - Optional restaurant name for branding
+ * @param {string} [params.theme] - Theme for image enhancement (brunch/lunch/dinner/event/royal)
  * @returns {Promise<Object>} Processing result
  */
-async function processImage({ imageUrl, userId, chatId, restaurantName = 'Restaurant' }) {
+async function processImage({ imageUrl, userId, chatId, restaurantName = 'Restaurant', theme = 'dinner' }) {
   const webhookUrl = getWebhookUrl();
   const startTime = Date.now();
 
-  logger.info(`Processing image for user ${userId}`, { webhookUrl, imageUrl: imageUrl.substring(0, 50) + '...' });
+  logger.info(`Processing image for user ${userId}`, { webhookUrl, theme, imageUrl: imageUrl.substring(0, 50) + '...' });
 
   let lastError;
 
@@ -42,6 +43,7 @@ async function processImage({ imageUrl, userId, chatId, restaurantName = 'Restau
           userId,
           chatId,
           restaurantName,
+          theme,
           timestamp: new Date().toISOString(),
         },
         {

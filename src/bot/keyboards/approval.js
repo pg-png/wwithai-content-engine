@@ -4,6 +4,27 @@
  */
 
 const { Markup } = require('telegraf');
+const { getAllThemes } = require('../../prompts/themes');
+
+/**
+ * Theme selection keyboard shown after photo upload
+ * @param {string} contentId - Unique ID for the photo session
+ */
+function themeKeyboard(contentId) {
+  const themes = getAllThemes();
+
+  // First row: Brunch, Lunch, Dinner
+  const row1 = themes.slice(0, 3).map(t =>
+    Markup.button.callback(`${t.emoji} ${t.label}`, `theme:${contentId}:${t.key}`)
+  );
+
+  // Second row: Event, Royal Thai
+  const row2 = themes.slice(3).map(t =>
+    Markup.button.callback(`${t.emoji} ${t.label}`, `theme:${contentId}:${t.key}`)
+  );
+
+  return Markup.inlineKeyboard([row1, row2]);
+}
 
 /**
  * Approval keyboard shown after content generation
@@ -124,6 +145,7 @@ function removeKeyboard() {
 }
 
 module.exports = {
+  themeKeyboard,
   approvalKeyboard,
   platformKeyboard,
   styleKeyboard,
