@@ -1,0 +1,405 @@
+{
+  "name": "WWITHai Content Engine v1",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "content-engine",
+        "responseMode": "responseNode",
+        "options": {
+          "responseContentType": "application/json"
+        }
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "webhookId": "content-engine-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate incoming request\nconst body = $input.first().json.body || $input.first().json;\n\nif (!body.imageUrl) {\n  throw new Error('imageUrl is required');\n}\n\nreturn {\n  imageUrl: body.imageUrl,\n  userId: body.userId || 'unknown',\n  chatId: body.chatId || 'unknown',\n  restaurantName: body.restaurantName || 'Restaurant',\n  timestamp: body.timestamp || new Date().toISOString(),\n  startTime: Date.now()\n};"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "options": {
+          "maxTokens": 1000,
+          "temperature": 0.7
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "Analyze this restaurant dish photo and return a JSON object with:\n{\n  \"dish_name\": \"name of the dish\",\n  \"cuisine_type\": \"Thai, Italian, etc.\",\n  \"main_ingredients\": [\"list\", \"of\", \"ingredients\"],\n  \"presentation_style\": \"rustic, elegant, casual, etc.\",\n  \"mood\": \"cozy, festive, romantic, etc.\",\n  \"quality_issues\": [\"any issues like blur, bad lighting\"],\n  \"suggested_angle\": \"how to improve the shot\"\n}\n\nBe specific and helpful. This is for creating Instagram content.",
+              "role": "system"
+            },
+            {
+              "content": {
+                "type": "image",
+                "image": "={{ $json.imageUrl }}"
+              },
+              "role": "user"
+            }
+          ]
+        }
+      },
+      "id": "analyze-image",
+      "name": "Analyze Image (Vision)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [440, 200],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-cred",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://queue.fal.run/fal-ai/clarity-upscaler",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"image_url\": \"{{ $('Validate Input').item.json.imageUrl }}\",\n  \"upscale_factor\": 2,\n  \"creativity\": 0.2,\n  \"resemblance\": 0.9\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "enhance-image",
+      "name": "Enhance Image (fal.ai)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "fal-ai-auth",
+          "name": "fal.ai API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 15,
+        "unit": "seconds"
+      },
+      "id": "wait-enhancement",
+      "name": "Wait for Enhancement",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [660, 400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://queue.fal.run/fal-ai/clarity-upscaler/requests/{{ $('Enhance Image (fal.ai)').item.json.request_id }}/status",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "check-enhancement-status",
+      "name": "Check Enhancement Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "fal-ai-auth",
+          "name": "fal.ai API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://queue.fal.run/fal-ai/clarity-upscaler/requests/{{ $('Enhance Image (fal.ai)').item.json.request_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "get-enhanced-image",
+      "name": "Get Enhanced Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "fal-ai-auth",
+          "name": "fal.ai API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "claude-3-5-sonnet-20241022",
+        "options": {
+          "maxTokensToSample": 500,
+          "temperature": 0.8
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "Tu es un expert en social media pour restaurants au Québec.\n\nRÈGLES ABSOLUES:\n- Français québécois naturel (pas de France)\n- Maximum 3 phrases + 5 hashtags\n- Ton: authentique, chaleureux, appétissant\n- Jamais: emojis excessifs, ton corporate, clichés\n- Toujours: donner envie, créer l'urgence douce\n\nFORMULES QUI MARCHENT:\n- Question + réponse: 'Envie de [X]? On t'attend.'\n- Behind the scenes: 'Fresh sorti de la cuisine...'\n- Urgence douce: 'Disponible ce soir seulement.'\n- Social proof: 'Le préféré de nos habitués.'\n\nHASHTAGS:\n- 2 génériques (#foodiemontreal #restosmtl)\n- 2 spécifiques au plat\n- 1 branded (#wwithai)\n\nRetourne UNIQUEMENT un JSON:\n{\n  \"caption\": \"ta caption ici\",\n  \"hashtags\": [\"#tag1\", \"#tag2\", \"#tag3\", \"#tag4\", \"#wwithai\"]\n}",
+              "role": "system"
+            },
+            {
+              "content": "=Restaurant: {{ $('Validate Input').item.json.restaurantName }}\n\nAnalyse du plat:\n{{ $('Analyze Image (Vision)').item.json.message.content }}\n\nGénère une caption Instagram pour ce plat.",
+              "role": "user"
+            }
+          ]
+        }
+      },
+      "id": "generate-caption",
+      "name": "Generate Caption (Claude)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.2,
+      "position": [1100, 200],
+      "credentials": {
+        "anthropicApi": {
+          "id": "anthropic-cred",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge all results\nconst input = $('Validate Input').first().json;\nconst analysis = $('Analyze Image (Vision)').first().json;\nconst enhanced = $('Get Enhanced Image').first().json;\nconst captionRaw = $('Generate Caption (Claude)').first().json;\n\n// Parse caption JSON\nlet caption = 'Fraîchement préparé avec amour ❤️';\nlet hashtags = ['#foodie', '#restaurant', '#bonappetit', '#mtlfood', '#wwithai'];\n\ntry {\n  const captionData = JSON.parse(captionRaw.message?.content || captionRaw.content || '{}');\n  caption = captionData.caption || caption;\n  hashtags = captionData.hashtags || hashtags;\n} catch (e) {\n  // Use defaults if parsing fails\n}\n\n// Get enhanced image URL\nconst enhancedUrl = enhanced?.image?.url || enhanced?.images?.[0]?.url || input.imageUrl;\n\nreturn {\n  success: true,\n  originalUrl: input.imageUrl,\n  enhancedUrl: enhancedUrl,\n  caption: caption,\n  hashtags: hashtags,\n  analysis: analysis?.message?.content || {},\n  processingTimeMs: Date.now() - input.startTime,\n  userId: input.userId,\n  chatId: input.chatId,\n  restaurantName: input.restaurantName\n};"
+      },
+      "id": "merge-results",
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "options": {},
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1540, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Check Enhancement Status').item.json.status }}",
+              "rightValue": "COMPLETED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-completed",
+      "name": "If Completed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [880, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fallback - use original image if enhancement fails\nconst input = $('Validate Input').first().json;\n\nreturn {\n  image: {\n    url: input.imageUrl\n  },\n  fallback: true\n};"
+      },
+      "id": "fallback-image",
+      "name": "Use Original (Fallback)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 550]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Analyze Image (Vision)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Enhance Image (fal.ai)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Image (Vision)": {
+      "main": [
+        [
+          {
+            "node": "Generate Caption (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enhance Image (fal.ai)": {
+      "main": [
+        [
+          {
+            "node": "Wait for Enhancement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Enhancement": {
+      "main": [
+        [
+          {
+            "node": "Check Enhancement Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Enhancement Status": {
+      "main": [
+        [
+          {
+            "node": "If Completed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Completed": {
+      "main": [
+        [
+          {
+            "node": "Get Enhanced Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Use Original (Fallback)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Enhanced Image": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Use Original (Fallback)": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Caption (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Results": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "WWITHai",
+      "id": "wwithai-tag"
+    },
+    {
+      "name": "Content Engine",
+      "id": "content-engine-tag"
+    }
+  ],
+  "triggerCount": 1,
+  "versionId": "1.0.0",
+  "meta": {
+    "instanceId": "wwithai-content-engine"
+  }
+}

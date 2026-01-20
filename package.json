@@ -1,0 +1,44 @@
+{
+  "name": "wwithai-content-engine",
+  "version": "1.0.0",
+  "description": "AI-powered content creation bot for restaurants - Transform phone photos into Instagram-ready posts in 60 seconds",
+  "main": "src/bot/index.js",
+  "scripts": {
+    "start": "node src/bot/index.js",
+    "dev": "nodemon src/bot/index.js",
+    "deploy-workflow": "node scripts/deploy-workflow.js",
+    "setup-notion": "node scripts/setup-notion.js",
+    "test": "node tests/test-flow.js"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "restaurant",
+    "content",
+    "ai",
+    "instagram",
+    "marketing",
+    "automation",
+    "n8n",
+    "fal-ai"
+  ],
+  "author": "Pascal Gonsales <pg@wwithai.com>",
+  "license": "MIT",
+  "dependencies": {
+    "telegraf": "^4.16.3",
+    "axios": "^1.6.7",
+    "dotenv": "^16.4.1",
+    "winston": "^3.11.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pasgon/wwithai-content-engine.git"
+  }
+}
