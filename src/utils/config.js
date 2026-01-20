@@ -1,19 +1,28 @@
 /**
  * Configuration loader for WWITHai Content Engine
- * Loads environment variables from ~/.config/wwithai/.env
+ * Supports both Railway environment variables and local .env file
  */
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-// Path to the centralized env file
+// Path to the centralized env file (for local development)
 const ENV_PATH = path.join(os.homedir(), '.config', 'wwithai', '.env');
 
+// Check if running on Railway or similar cloud platform
+const isCloud = process.env.RAILWAY_ENVIRONMENT || process.env.RENDER || process.env.FLY_APP_NAME;
+
 /**
- * Load and parse environment variables from file
+ * Load and parse environment variables from file (local dev only)
  */
 function loadEnvFile() {
+  // Skip file loading on cloud platforms
+  if (isCloud) {
+    console.log('☁️  Running on cloud platform, using environment variables');
+    return {};
+  }
+
   try {
     if (!fs.existsSync(ENV_PATH)) {
       console.warn(`⚠️  Config file not found at ${ENV_PATH}`);
@@ -21,6 +30,7 @@ function loadEnvFile() {
       return {};
     }
 
+    console.log(`📄 Loading config from ${ENV_PATH}`);
     const content = fs.readFileSync(ENV_PATH, 'utf-8');
     const lines = content.split('\n');
     const env = {};
@@ -87,8 +97,17 @@ function validateConfig() {
   if (missing.length > 0) {
     console.error('❌ Missing required configuration:');
     missing.forEach(key => console.error(`   - ${key}`));
+    console.error('\n📋 On Railway, set these environment variables:');
+    console.error('   TELEGRAM_BOT_TOKEN=your_bot_token');
+    console.error('\n   Optional but recommended:');
+    console.error('   N8N_URL=https://hanumet.app.n8n.cloud');
     return false;
   }
+
+  // Log successful config (hide sensitive values)
+  console.log('✅ Configuration loaded:');
+  console.log(`   TELEGRAM_BOT_TOKEN: ${config.TELEGRAM_BOT_TOKEN ? '***' + config.TELEGRAM_BOT_TOKEN.slice(-4) : 'NOT SET'}`);
+  console.log(`   N8N_URL: ${config.N8N_URL}`);
 
   return true;
 }
