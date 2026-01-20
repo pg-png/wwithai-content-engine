@@ -8,14 +8,15 @@ const { logger, logUserAction } = require('../../utils/logger');
 
 // Welcome message in Quebec French
 const WELCOME_MESSAGE = `
-👋 *Bienvenue sur Kai, ton assistant content!*
+👋 *Bienvenue sur Kai, ton assistant content!* (v2.0)
 
-Je transforme tes photos de plats en posts Instagram professionnels en *60 secondes*.
+Je transforme tes photos de plats en posts Instagram professionnels.
 
 📸 *Comment ça marche?*
 1. Envoie-moi une photo de ton plat
-2. Je l'améliore et génère une caption
-3. Tu approuves → Prêt à poster!
+2. Ajoute des photos de ton décor _(optionnel)_
+3. Choisis l'ambiance et l'angle
+4. Tu approuves → Prêt à poster!
 
 ✨ *C'est vraiment simple.*
 

@@ -2,7 +2,7 @@
  * Photo Handler
  * Handles incoming photos with decor upload, theme and angle selection flow
  *
- * FLOW:
+ * FLOW (v2.0):
  * 1. Food photo received → Ask about decor upload (optional)
  * 2. If yes → Accept 1-3 decor photos → "Done" button
  * 3. Show theme selection (Brunch/Lunch/Dinner/Event/Royal)
