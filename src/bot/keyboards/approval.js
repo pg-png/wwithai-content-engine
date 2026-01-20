@@ -7,7 +7,34 @@ const { Markup } = require('telegraf');
 const { getAllThemes } = require('../../prompts/themes');
 
 /**
- * Theme selection keyboard shown after photo upload
+ * Decor upload prompt keyboard - shown after food photo
+ * @param {string} contentId - Unique ID for the photo session
+ */
+function decorPromptKeyboard(contentId) {
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback('📷 Oui, ajouter décor', `decor:${contentId}:yes`),
+    ],
+    [
+      Markup.button.callback('⏭️ Non, continuer', `decor:${contentId}:skip`),
+    ],
+  ]);
+}
+
+/**
+ * Done adding decor photos keyboard
+ * @param {string} contentId - Unique ID for the photo session
+ */
+function decorDoneKeyboard(contentId) {
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback('✅ Terminé, continuer', `decor:${contentId}:done`),
+    ],
+  ]);
+}
+
+/**
+ * Theme selection keyboard shown after decor step
  * @param {string} contentId - Unique ID for the photo session
  */
 function themeKeyboard(contentId) {
@@ -24,6 +51,23 @@ function themeKeyboard(contentId) {
   );
 
   return Markup.inlineKeyboard([row1, row2]);
+}
+
+/**
+ * Camera angle selection keyboard
+ * @param {string} contentId - Unique ID for the photo session
+ */
+function angleKeyboard(contentId) {
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback('📐 45° Classique', `angle:${contentId}:45deg`),
+      Markup.button.callback('🔝 Vue du haut', `angle:${contentId}:overhead`),
+    ],
+    [
+      Markup.button.callback('👁️ Niveau des yeux', `angle:${contentId}:eyelevel`),
+      Markup.button.callback('🎯 3/4 Angle', `angle:${contentId}:threequarter`),
+    ],
+  ]);
 }
 
 /**
@@ -145,7 +189,10 @@ function removeKeyboard() {
 }
 
 module.exports = {
+  decorPromptKeyboard,
+  decorDoneKeyboard,
   themeKeyboard,
+  angleKeyboard,
   approvalKeyboard,
   platformKeyboard,
   styleKeyboard,

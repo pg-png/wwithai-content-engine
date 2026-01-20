@@ -1,45 +1,90 @@
 /**
  * Photo Handler
- * Handles incoming photos and initiates theme selection flow
+ * Handles incoming photos with decor upload, theme and angle selection flow
+ *
+ * FLOW:
+ * 1. Food photo received → Ask about decor upload (optional)
+ * 2. If yes → Accept 1-3 decor photos → "Done" button
+ * 3. Show theme selection (Brunch/Lunch/Dinner/Event/Royal)
+ * 4. Show angle selection (45°/Overhead/Eye-level/3-4)
+ * 5. Process with n8n workflow
+ * 6. Show result with approval keyboard
  */
 
 const { v4: uuidv4 } = require('uuid');
 const { processImage } = require('../../services/n8n');
 const { logContentEntry } = require('../../services/notion');
-const { themeKeyboard, approvalKeyboard } = require('../keyboards/approval');
+const {
+  decorPromptKeyboard,
+  decorDoneKeyboard,
+  themeKeyboard,
+  angleKeyboard,
+  approvalKeyboard
+} = require('../keyboards/approval');
 const { logger, logUserAction, logProgress } = require('../../utils/logger');
 const { config } = require('../../utils/config');
 
 // Store for pending content (in-memory, replace with Redis in production)
 const pendingContent = new Map();
 
-// Progress messages (French)
-const PROGRESS_MESSAGES = {
-  received: '📸 Photo reçue! Choisis l\'ambiance:',
-  analyzing: '🔍 Analyse du plat en cours...',
-  enhancing: '✨ Transformation de l\'image...',
-  generating: '✍️ Génération de la caption...',
-  finalizing: '🎯 Finalisation...',
+// Session states
+const SESSION_STATES = {
+  AWAITING_DECOR_CHOICE: 'awaiting_decor_choice',
+  COLLECTING_DECOR: 'collecting_decor',
+  AWAITING_THEME: 'awaiting_theme',
+  AWAITING_ANGLE: 'awaiting_angle',
+  PROCESSING: 'processing',
+  PENDING_APPROVAL: 'pending_approval',
 };
 
 /**
- * Handle incoming photo - show theme selection
+ * Handle incoming photo - determine if it's food or decor based on session state
  */
 async function handlePhoto(ctx) {
   const userId = ctx.from.id;
   const chatId = ctx.chat.id;
+
+  // Check if user has an active session waiting for decor photos
+  const activeSession = findActiveSession(userId, SESSION_STATES.COLLECTING_DECOR);
+
+  if (activeSession) {
+    return handleDecorPhoto(ctx, activeSession.contentId);
+  }
+
+  // New food photo - start new session
+  return handleFoodPhoto(ctx);
+}
+
+/**
+ * Find active session for user in specific state
+ */
+function findActiveSession(userId, state) {
+  for (const [contentId, content] of pendingContent.entries()) {
+    if (content.userId === userId && content.status === state) {
+      return { contentId, content };
+    }
+  }
+  return null;
+}
+
+/**
+ * Handle new food photo - start session flow
+ */
+async function handleFoodPhoto(ctx) {
+  const userId = ctx.from.id;
+  const chatId = ctx.chat.id;
   const contentId = uuidv4().substring(0, 8);
 
-  logUserAction(userId, 'photo_received', { contentId });
-  logProgress(userId, 'Photo received', 'started');
+  logUserAction(userId, 'food_photo_received', { contentId });
+  logProgress(userId, 'Food photo received', 'started');
 
   try {
     // Get the highest quality photo
     const photos = ctx.message.photo;
-    const photo = photos[photos.length - 1]; // Largest size
+    const photo = photos[photos.length - 1];
     const fileId = photo.file_id;
 
-    logger.info('Photo received, awaiting theme selection', {
+    logger.info('Food photo received', {
       userId,
       contentId,
       fileId: fileId.substring(0, 20) + '...',
@@ -51,27 +96,34 @@ async function handlePhoto(ctx) {
     const fileLink = await ctx.telegram.getFileLink(fileId);
     const imageUrl = fileLink.href;
 
-    // Store photo info for later processing (when theme is selected)
+    // Store session with food photo
     pendingContent.set(contentId, {
       userId,
       chatId,
-      originalUrl: imageUrl,
-      fileId,
-      width: photo.width,
-      height: photo.height,
+      foodPhotoUrl: imageUrl,
+      foodPhotoFileId: fileId,
+      decorPhotos: [], // Will hold 0-3 decor photo URLs
+      theme: null,
+      angle: null,
       restaurantName: ctx.from.first_name || 'Restaurant',
       createdAt: new Date().toISOString(),
-      status: 'awaiting_theme',
+      status: SESSION_STATES.AWAITING_DECOR_CHOICE,
     });
 
-    // Show theme selection keyboard
-    await ctx.reply(PROGRESS_MESSAGES.received, {
-      reply_markup: themeKeyboard(contentId).reply_markup,
-    });
+    // Ask about decor photos
+    await ctx.reply(
+      '📸 *Photo reçue!*\n\n' +
+      'Veux-tu ajouter des photos de ton décor/ambiance pour un meilleur résultat?\n' +
+      '_(1-3 photos optionnelles de l\'intérieur de ton resto)_',
+      {
+        parse_mode: 'Markdown',
+        reply_markup: decorPromptKeyboard(contentId).reply_markup,
+      }
+    );
 
-    logProgress(userId, 'Theme selection shown', 'waiting');
+    logProgress(userId, 'Decor choice shown', 'waiting');
   } catch (error) {
-    logger.error('Photo handler error', {
+    logger.error('Food photo handler error', {
       userId,
       error: error.message,
     });
@@ -84,37 +136,205 @@ async function handlePhoto(ctx) {
 }
 
 /**
- * Process photo with selected theme
- * Called from callback handler when user selects a theme
+ * Handle decor photo addition
  */
-async function processWithTheme(ctx, contentId, theme) {
+async function handleDecorPhoto(ctx, contentId) {
   const content = pendingContent.get(contentId);
+  const userId = ctx.from.id;
 
   if (!content) {
-    await ctx.answerCbQuery('⚠️ Photo expirée. Renvoie ta photo.');
+    await ctx.reply('⚠️ Session expirée. Envoie une nouvelle photo de plat.');
     return;
   }
 
-  const { userId, chatId, originalUrl, restaurantName } = content;
-  const startTime = Date.now();
-
-  logUserAction(userId, 'theme_selected', { contentId, theme });
-  logProgress(userId, `Processing with theme: ${theme}`, 'started');
+  // Check limit
+  if (content.decorPhotos.length >= 3) {
+    await ctx.reply(
+      '⚠️ Maximum 3 photos de décor atteint.\n' +
+      'Clique sur "Terminé, continuer" pour passer à la suite.',
+      { reply_markup: decorDoneKeyboard(contentId).reply_markup }
+    );
+    return;
+  }
 
   try {
-    // Answer callback immediately
+    const photos = ctx.message.photo;
+    const photo = photos[photos.length - 1];
+    const fileLink = await ctx.telegram.getFileLink(photo.file_id);
+
+    // Add decor photo to session
+    content.decorPhotos.push(fileLink.href);
+    pendingContent.set(contentId, content);
+
+    const count = content.decorPhotos.length;
+    const remaining = 3 - count;
+
+    logUserAction(userId, 'decor_photo_added', { contentId, count });
+
+    if (remaining > 0) {
+      await ctx.reply(
+        `✅ Photo de décor ${count}/3 ajoutée!\n\n` +
+        `Tu peux en ajouter ${remaining} de plus, ou continuer.`,
+        { reply_markup: decorDoneKeyboard(contentId).reply_markup }
+      );
+    } else {
+      await ctx.reply(
+        `✅ 3 photos de décor ajoutées! Maximum atteint.\n\n` +
+        `Clique pour continuer.`,
+        { reply_markup: decorDoneKeyboard(contentId).reply_markup }
+      );
+    }
+  } catch (error) {
+    logger.error('Decor photo handler error', {
+      userId,
+      contentId,
+      error: error.message,
+    });
+    await ctx.reply('😔 Erreur lors de l\'ajout. Réessaie.');
+  }
+}
+
+/**
+ * Handle decor choice callback (yes/skip/done)
+ */
+async function handleDecorChoice(ctx, contentId, choice) {
+  const content = pendingContent.get(contentId);
+  const userId = ctx.from.id;
+
+  if (!content) {
+    await ctx.answerCbQuery('⚠️ Session expirée');
+    return;
+  }
+
+  logUserAction(userId, 'decor_choice', { contentId, choice });
+
+  if (choice === 'yes') {
+    // User wants to add decor photos
+    content.status = SESSION_STATES.COLLECTING_DECOR;
+    pendingContent.set(contentId, content);
+
+    await ctx.answerCbQuery('📷 Envoie tes photos de décor');
+    await ctx.editMessageText(
+      '📷 *Envoie 1 à 3 photos de ton décor/ambiance*\n\n' +
+      'Par exemple:\n' +
+      '• L\'intérieur de ton restaurant\n' +
+      '• Ta table typique\n' +
+      '• L\'éclairage/ambiance\n\n' +
+      '_Clique sur "Terminé" quand tu as fini._',
+      {
+        parse_mode: 'Markdown',
+        reply_markup: decorDoneKeyboard(contentId).reply_markup,
+      }
+    );
+  } else if (choice === 'skip' || choice === 'done') {
+    // Skip decor or done collecting - move to theme selection
+    content.status = SESSION_STATES.AWAITING_THEME;
+    pendingContent.set(contentId, content);
+
+    const decorCount = content.decorPhotos.length;
+    const decorMsg = decorCount > 0
+      ? `\n\n_${decorCount} photo(s) de décor en référence_`
+      : '';
+
+    await ctx.answerCbQuery(decorCount > 0 ? '✅ Décor enregistré' : '⏭️ Continué sans décor');
+    await ctx.editMessageText(
+      `🎨 *Choisis l'ambiance de ta photo:*${decorMsg}`,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: themeKeyboard(contentId).reply_markup,
+      }
+    );
+  }
+}
+
+/**
+ * Handle theme selection - move to angle selection
+ */
+async function handleThemeSelection(ctx, contentId, theme) {
+  const content = pendingContent.get(contentId);
+  const userId = ctx.from.id;
+
+  if (!content) {
+    await ctx.answerCbQuery('⚠️ Session expirée');
+    return;
+  }
+
+  content.theme = theme;
+  content.status = SESSION_STATES.AWAITING_ANGLE;
+  pendingContent.set(contentId, content);
+
+  logUserAction(userId, 'theme_selected', { contentId, theme });
+
+  await ctx.answerCbQuery(`🎨 Thème: ${theme}`);
+  await ctx.editMessageText(
+    '📐 *Choisis l\'angle de prise de vue:*\n\n' +
+    '• 45° Classique - idéal pour bols et assiettes\n' +
+    '• Vue du haut - pour compositions et tables\n' +
+    '• Niveau des yeux - pour plats hauts, burgers\n' +
+    '• 3/4 Angle - polyvalent et naturel',
+    {
+      parse_mode: 'Markdown',
+      reply_markup: angleKeyboard(contentId).reply_markup,
+    }
+  );
+}
+
+/**
+ * Handle angle selection - start processing
+ */
+async function handleAngleSelection(ctx, contentId, angle) {
+  const content = pendingContent.get(contentId);
+
+  if (!content) {
+    await ctx.answerCbQuery('⚠️ Session expirée');
+    return;
+  }
+
+  content.angle = angle;
+  content.status = SESSION_STATES.PROCESSING;
+  pendingContent.set(contentId, content);
+
+  // Start processing
+  await processWithSettings(ctx, contentId);
+}
+
+/**
+ * Process photo with all selected settings
+ */
+async function processWithSettings(ctx, contentId) {
+  const content = pendingContent.get(contentId);
+
+  if (!content) {
+    await ctx.answerCbQuery('⚠️ Session expirée');
+    return;
+  }
+
+  const { userId, chatId, foodPhotoUrl, decorPhotos, theme, angle, restaurantName } = content;
+  const startTime = Date.now();
+  const hasDecorReference = decorPhotos.length > 0;
+
+  logUserAction(userId, 'processing_started', { contentId, theme, angle, decorCount: decorPhotos.length });
+  logProgress(userId, `Processing: theme=${theme}, angle=${angle}`, 'started');
+
+  try {
     await ctx.answerCbQuery('⏳ Transformation en cours...');
+    await ctx.editMessageText(
+      '⏳ *Transformation en cours...*\n\n' +
+      '🔍 Analyse du plat...\n' +
+      '✨ Application du style...',
+      { parse_mode: 'Markdown' }
+    );
 
-    // Edit the theme selection message to show progress
-    await ctx.editMessageText('⏳ Transformation en cours...\n\n🔍 Analyse du plat...');
-
-    // Process through n8n workflow with theme
+    // Process through n8n workflow
     const result = await processImage({
-      imageUrl: originalUrl,
+      imageUrl: foodPhotoUrl,
       userId: String(userId),
       chatId: String(chatId),
       restaurantName,
-      theme, // Pass the selected theme
+      theme,
+      angle,
+      decorPhotos, // Pass decor photos for reference
+      hasDecorReference,
     });
 
     const processingTimeMs = Date.now() - startTime;
@@ -125,7 +345,7 @@ async function processWithTheme(ctx, contentId, theme) {
 
     // Extract result data
     const {
-      enhancedUrl = originalUrl,
+      enhancedUrl = foodPhotoUrl,
       caption = generateFallbackCaption(theme),
       hashtags = getDefaultHashtags(theme),
       analysis = {},
@@ -138,9 +358,8 @@ async function processWithTheme(ctx, contentId, theme) {
       caption,
       hashtags,
       analysis,
-      theme,
       processingTimeMs,
-      status: 'pending_approval',
+      status: SESSION_STATES.PENDING_APPROVAL,
     });
 
     // Log to Notion
@@ -150,6 +369,8 @@ async function processWithTheme(ctx, contentId, theme) {
       status: 'pending',
       caption,
       theme,
+      angle,
+      hasDecorReference,
       processingTimeMs,
       platforms: ['instagram'],
     }).catch(err => logger.warn('Notion logging failed', { error: err.message }));
@@ -174,6 +395,8 @@ async function processWithTheme(ctx, contentId, theme) {
       userId,
       contentId,
       theme,
+      angle,
+      hasDecorReference,
       processingTimeMs,
     });
   } catch (error) {
@@ -182,10 +405,10 @@ async function processWithTheme(ctx, contentId, theme) {
       userId,
       contentId,
       theme,
+      angle,
       error: error.message,
     });
 
-    // Try to delete progress message
     try {
       await ctx.deleteMessage();
     } catch (e) {
@@ -215,13 +438,13 @@ function formatCaption(caption, hashtags) {
  */
 function generateFallbackCaption(theme) {
   const fallbacks = {
-    brunch: 'Le brunch parfait pour commencer la journée ☀️',
-    lunch: 'Pause lunch bien méritée 🍽️',
-    dinner: 'Une soirée qui s\'annonce délicieuse 🌙',
-    event: 'Moment de célébration! 🎉',
-    royal: 'Un repas digne de la royauté thaïlandaise 👑',
+    brunch: 'Le brunch parfait pour commencer la journée.',
+    lunch: 'Pause lunch bien méritée.',
+    dinner: 'Une soirée qui s\'annonce savoureuse.',
+    event: 'Moment de célébration!',
+    royal: 'Un repas digne de la tradition thaïlandaise.',
   };
-  return fallbacks[theme] || 'Fraîchement préparé avec amour ❤️';
+  return fallbacks[theme] || 'Fraîchement préparé avec amour.';
 }
 
 /**
@@ -269,12 +492,9 @@ async function handleDocument(ctx) {
   const document = ctx.message.document;
   const mimeType = document.mime_type || '';
 
-  // Check if it's an image
   if (mimeType.startsWith('image/')) {
-    // Get file link and process as photo
     const fileLink = await ctx.telegram.getFileLink(document.file_id);
 
-    // Create a fake photo context
     ctx.message.photo = [{
       file_id: document.file_id,
       width: 0,
@@ -293,7 +513,9 @@ async function handleDocument(ctx) {
 module.exports = {
   handlePhoto,
   handleDocument,
-  processWithTheme,
+  handleDecorChoice,
+  handleThemeSelection,
+  handleAngleSelection,
   getPendingContent,
   updatePendingContent,
   deletePendingContent,

@@ -1,67 +1,63 @@
 /**
  * Theme-based prompt templates for Fal.ai Nano Banana Pro
- * Each theme creates a different atmosphere for the dish photo
+ * UPDATED: More subtle, realistic food photography - no over-dramatic effects
  */
 
+// Camera angle descriptions for food photography
+const ANGLES = {
+  '45deg': {
+    label: '45° Classique',
+    description: '45-degree angle shot, most appetizing angle for plated dishes and bowls'
+  },
+  'overhead': {
+    label: 'Vue du haut',
+    description: 'Overhead flat lay shot, perfect for spreads and table compositions'
+  },
+  'eyelevel': {
+    label: 'Niveau des yeux',
+    description: 'Eye-level hero shot, ideal for tall dishes, burgers, and layered items'
+  },
+  'threequarter': {
+    label: '3/4 Angle',
+    description: 'Three-quarter angle, versatile and natural-looking perspective'
+  }
+};
+
+// Theme configurations - SUBTLE and REALISTIC
 const THEMES = {
   brunch: {
     emoji: '🌅',
     label: 'Brunch',
     captionContext: 'Ambiance brunch du weekend, moment de détente',
-    promptTemplate: (dishDescription) => `Cinematic close-up of ${dishDescription}.
-Soft morning light streaming through windows, fresh and airy atmosphere.
-Setting: White marble table, subtle greenery, minimalist ceramic dishes.
-Style: Clean, bright, Instagram-worthy, lifestyle photography.
-Lighting: Soft diffused natural daylight, gentle shadows, warm highlights.
-Keep the dish 100% authentic and unmodified.`
+    environment: 'Soft natural morning light, clean white or light wood table, minimal props. Fresh and bright atmosphere without being overexposed.'
   },
 
   lunch: {
     emoji: '☀️',
     label: 'Lunch',
     captionContext: 'Pause lunch énergisante, saveurs du midi',
-    promptTemplate: (dishDescription) => `Cinematic close-up of ${dishDescription}.
-Bright midday energy, casual elegance, inviting and fresh.
-Setting: Natural wooden table, subtle restaurant ambiance, clean background.
-Style: Modern bistro, appetizing, vibrant colors, editorial food photography.
-Lighting: Bright natural daylight from side, crisp shadows, color-accurate.
-Keep the dish 100% authentic and unmodified.`
+    environment: 'Natural daylight, casual restaurant setting, wooden or marble surface. Clean and inviting, modern bistro feel.'
   },
 
   dinner: {
     emoji: '🌙',
     label: 'Dinner',
     captionContext: 'Soirée intime, expérience gastronomique',
-    promptTemplate: (dishDescription) => `Cinematic close-up of ${dishDescription}.
-Intimate evening atmosphere, sophisticated and moody.
-Setting: Dark wood table, candlelight reflections, elegant restaurant interior.
-Style: Fine dining, dramatic, sensual, magazine-quality food photography.
-Lighting: Warm golden candlelight, dramatic shadows, rich contrast, moody atmosphere.
-Keep the dish 100% authentic and unmodified.`
+    environment: 'Warm ambient restaurant lighting, dark wood table, soft background blur. Elegant but not theatrical. Subtle warmth, not dramatic candlelight.'
   },
 
   event: {
     emoji: '🎉',
     label: 'Événement',
     captionContext: 'Célébration, moment spécial à partager',
-    promptTemplate: (dishDescription) => `Cinematic close-up of ${dishDescription}.
-Festive celebration atmosphere, joyful and vibrant energy.
-Setting: Elegant table setting, subtle sparkles, celebration décor hints.
-Style: Party vibes, luxurious, shareable moment, social media ready.
-Lighting: Warm ambient with subtle sparkle effects, celebratory glow.
-Keep the dish 100% authentic and unmodified.`
+    environment: 'Warm festive lighting, elegant table setting with subtle celebration hints. Joyful but refined, not over-the-top party effects.'
   },
 
   royal: {
     emoji: '👑',
     label: 'Royal Thai',
     captionContext: 'Expérience royale thaïlandaise, tradition et élégance',
-    promptTemplate: (dishDescription) => `Cinematic close-up of ${dishDescription}.
-Royal Thai palace atmosphere, cultural elegance, once-in-a-lifetime dining experience.
-Setting: Golden pedestal or traditional Thai serving ware, Thai mural background blur, rich cultural elements.
-Style: Luxurious, museum-quality, heritage, exclusive, dramatic food photography.
-Lighting: Warm golden hour light, dramatic shadows, soft particles in air, regal atmosphere.
-Keep the dish 100% authentic and unmodified.`
+    environment: 'Rich warm tones, traditional Thai elements in background, golden accents. Cultural elegance without kitsch. Premium feel, museum-worthy presentation.'
   }
 };
 
@@ -71,18 +67,47 @@ Keep the dish 100% authentic and unmodified.`
  * @returns {object} Theme configuration
  */
 function getTheme(themeKey) {
-  return THEMES[themeKey] || THEMES.dinner; // Default to dinner
+  return THEMES[themeKey] || THEMES.dinner;
 }
 
 /**
- * Generate image enhancement prompt for a theme and dish
+ * Get angle configuration by key
+ * @param {string} angleKey - Angle identifier
+ * @returns {object} Angle configuration
+ */
+function getAngle(angleKey) {
+  return ANGLES[angleKey] || ANGLES['45deg'];
+}
+
+/**
+ * Generate image enhancement prompt
  * @param {string} themeKey - Theme identifier
+ * @param {string} angleKey - Camera angle identifier
  * @param {string} dishDescription - Description of the dish from vision analysis
+ * @param {boolean} hasDecorReference - Whether user provided decor photos
  * @returns {string} Complete prompt for Nano Banana Pro
  */
-function generateEnhancementPrompt(themeKey, dishDescription) {
+function generateEnhancementPrompt(themeKey, angleKey, dishDescription, hasDecorReference = false) {
   const theme = getTheme(themeKey);
-  return theme.promptTemplate(dishDescription);
+  const angle = getAngle(angleKey);
+
+  // Build the prompt with subtle, realistic approach
+  let prompt = `Professional food photography of ${dishDescription}.
+Camera angle: ${angle.description}.
+Environment: ${theme.environment}`;
+
+  // Add decor reference instruction if user provided photos
+  if (hasDecorReference) {
+    prompt += `
+Style matching the provided restaurant interior reference photos.`;
+  }
+
+  prompt += `
+Keep the dish completely unmodified and 100% authentic - no changes to the food itself.
+Subtle, realistic enhancement only. No over-dramatic effects, no excessive shadows or highlights.
+Style: Modern restaurant photography, Instagram-worthy, appetizing, natural-looking.`;
+
+  return prompt;
 }
 
 /**
@@ -107,10 +132,24 @@ function getAllThemes() {
   }));
 }
 
+/**
+ * Get all angles for keyboard display
+ * @returns {Array} Array of angle objects with key, label
+ */
+function getAllAngles() {
+  return Object.entries(ANGLES).map(([key, angle]) => ({
+    key,
+    label: angle.label
+  }));
+}
+
 module.exports = {
   THEMES,
+  ANGLES,
   getTheme,
+  getAngle,
   generateEnhancementPrompt,
   getCaptionContext,
-  getAllThemes
+  getAllThemes,
+  getAllAngles
 };

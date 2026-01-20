@@ -24,13 +24,32 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
  * @param {string} params.chatId - Telegram chat ID
  * @param {string} [params.restaurantName] - Optional restaurant name for branding
  * @param {string} [params.theme] - Theme for image enhancement (brunch/lunch/dinner/event/royal)
+ * @param {string} [params.angle] - Camera angle (45deg/overhead/eyelevel/threequarter)
+ * @param {Array} [params.decorPhotos] - Array of decor photo URLs for reference
+ * @param {boolean} [params.hasDecorReference] - Whether decor photos were provided
  * @returns {Promise<Object>} Processing result
  */
-async function processImage({ imageUrl, userId, chatId, restaurantName = 'Restaurant', theme = 'dinner' }) {
+async function processImage({
+  imageUrl,
+  userId,
+  chatId,
+  restaurantName = 'Restaurant',
+  theme = 'dinner',
+  angle = '45deg',
+  decorPhotos = [],
+  hasDecorReference = false
+}) {
   const webhookUrl = getWebhookUrl();
   const startTime = Date.now();
 
-  logger.info(`Processing image for user ${userId}`, { webhookUrl, theme, imageUrl: imageUrl.substring(0, 50) + '...' });
+  logger.info(`Processing image for user ${userId}`, {
+    webhookUrl,
+    theme,
+    angle,
+    hasDecorReference,
+    decorCount: decorPhotos.length,
+    imageUrl: imageUrl.substring(0, 50) + '...'
+  });
 
   let lastError;
 
@@ -44,6 +63,9 @@ async function processImage({ imageUrl, userId, chatId, restaurantName = 'Restau
           chatId,
           restaurantName,
           theme,
+          angle,
+          decorPhotos,
+          hasDecorReference,
           timestamp: new Date().toISOString(),
         },
         {

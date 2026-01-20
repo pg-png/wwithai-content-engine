@@ -7,7 +7,9 @@ const {
   getPendingContent,
   updatePendingContent,
   deletePendingContent,
-  processWithTheme,
+  handleDecorChoice,
+  handleThemeSelection,
+  handleAngleSelection,
 } = require('./photo');
 const { updateContentEntry } = require('../../services/notion');
 const {
@@ -50,8 +52,14 @@ async function handleCallback(ctx) {
 
   try {
     switch (action) {
+      case 'decor':
+        await handleDecorChoice(ctx, params[0], params[1]);
+        break;
       case 'theme':
         await handleThemeSelection(ctx, params[0], params[1]);
+        break;
+      case 'angle':
+        await handleAngleSelection(ctx, params[0], params[1]);
         break;
       case 'approve':
         await handleApprove(ctx, params[0]);
@@ -82,18 +90,6 @@ async function handleCallback(ctx) {
     logger.error('Callback handler error', { error: error.message, action, userId });
     await ctx.answerCbQuery('Une erreur est survenue');
   }
-}
-
-/**
- * Handle theme selection - triggers photo processing
- */
-async function handleThemeSelection(ctx, contentId, theme) {
-  const userId = ctx.from.id;
-
-  logUserAction(userId, 'theme_selected', { contentId, theme });
-
-  // Delegate to photo.js processWithTheme
-  await processWithTheme(ctx, contentId, theme);
 }
 
 /**
