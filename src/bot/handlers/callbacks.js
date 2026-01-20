@@ -114,7 +114,10 @@ async function handleApprove(ctx, contentId) {
     .catch(err => logger.warn('Notion update failed', { error: err.message }));
 
   // Format the final content for copying
-  const fullCaption = `${content.caption}\n\n${content.hashtags.join(' ')}`;
+  const hashtagString = Array.isArray(content.hashtags)
+    ? content.hashtags.join(' ')
+    : (content.hashtags || '');
+  const fullCaption = `${content.caption || ''}\n\n${hashtagString}`;
 
   await ctx.answerCbQuery('✅ Approuvé!');
 
@@ -218,9 +221,12 @@ async function handleStyleChange(ctx, contentId, style) {
 
   // Show updated content
   const { approvalKeyboard } = require('../keyboards/approval');
+  const hashtagStr = Array.isArray(content.hashtags)
+    ? content.hashtags.join(' ')
+    : (content.hashtags || '');
 
   await ctx.editMessageCaption(
-    `✨ *Nouvelle version:*\n\n${newCaption}\n\n${content.hashtags.join(' ')}`,
+    `✨ *Nouvelle version:*\n\n${newCaption}\n\n${hashtagStr}`,
     {
       parse_mode: 'Markdown',
       reply_markup: approvalKeyboard(contentId).reply_markup,
