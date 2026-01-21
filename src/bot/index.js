@@ -169,46 +169,61 @@ async function startBot() {
   // Start the bot
   // ============================================
 
-  // Launch bot
+  // Launch bot with retry logic for 409 conflicts
   logger.info('Starting bot...');
 
-  try {
-    await bot.launch();
+  const MAX_RETRIES = 5;
+  const RETRY_DELAY = 10000; // 10 seconds
 
-    // Get bot info
-    const botInfo = await bot.telegram.getMe();
-    logger.info(`Bot started successfully!`, {
-      username: botInfo.username,
-      id: botInfo.id,
-    });
-
-    console.log(`\n✅ Bot is running: @${botInfo.username}\n`);
-    console.log(`📱 Open Telegram and search for @${botInfo.username}`);
-    console.log(`   or click: https://t.me/${botInfo.username}\n`);
-
-    // Start HTTP server for Railway health checks
-    const PORT = process.env.PORT || 3000;
-    const server = http.createServer((req, res) => {
-      if (req.url === '/health' || req.url === '/') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          status: 'ok',
-          bot: botInfo.username,
-          uptime: process.uptime()
-        }));
+  let botInfo;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      await bot.launch();
+      botInfo = await bot.telegram.getMe();
+      break; // Success!
+    } catch (err) {
+      if (err.message.includes('409') && attempt < MAX_RETRIES) {
+        logger.warn(`Bot conflict (attempt ${attempt}/${MAX_RETRIES}), waiting ${RETRY_DELAY/1000}s...`);
+        await new Promise(r => setTimeout(r, RETRY_DELAY));
       } else {
-        res.writeHead(404);
-        res.end('Not found');
+        throw err;
       }
-    });
+    }
+  }
 
-    server.listen(PORT, () => {
-      console.log(`🌐 Health server running on port ${PORT}`);
-    });
-  } catch (error) {
-    logger.error('Failed to start bot', { error: error.message });
+  if (!botInfo) {
+    logger.error('Failed to start bot after all retries');
     process.exit(1);
   }
+
+  logger.info(`Bot started successfully!`, {
+    username: botInfo.username,
+    id: botInfo.id,
+  });
+
+  console.log(`\n✅ Bot is running: @${botInfo.username}\n`);
+  console.log(`📱 Open Telegram and search for @${botInfo.username}`);
+  console.log(`   or click: https://t.me/${botInfo.username}\n`);
+
+  // Start HTTP server for Railway health checks
+  const PORT = process.env.PORT || 3000;
+  const server = http.createServer((req, res) => {
+    if (req.url === '/health' || req.url === '/') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'ok',
+        bot: botInfo.username,
+        uptime: process.uptime()
+      }));
+    } else {
+      res.writeHead(404);
+      res.end('Not found');
+    }
+  });
+
+  server.listen(PORT, () => {
+    console.log(`🌐 Health server running on port ${PORT}`);
+  });
 
   // Graceful shutdown
   process.once('SIGINT', () => {
