@@ -28,6 +28,30 @@ const BANNER = `
 ╚═══════════════════════════════════════════════════╝
 `;
 
+// Track bot status for health checks
+let botStatus = { state: 'starting', username: null };
+
+// Start HTTP health server IMMEDIATELY (before any delays)
+const PORT = process.env.PORT || 3000;
+const server = http.createServer((req, res) => {
+  if (req.url === '/health' || req.url === '/') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      status: botStatus.state === 'running' ? 'ok' : 'starting',
+      bot: botStatus.username,
+      state: botStatus.state,
+      uptime: process.uptime()
+    }));
+  } else {
+    res.writeHead(404);
+    res.end('Not found');
+  }
+});
+
+server.listen(PORT, () => {
+  console.log(`🌐 Health server running on port ${PORT}`);
+});
+
 /**
  * Initialize and start the bot
  */
@@ -203,6 +227,9 @@ async function startBot() {
     process.exit(1);
   }
 
+  // Update bot status for health endpoint
+  botStatus = { state: 'running', username: botInfo.username };
+
   logger.info(`Bot started successfully!`, {
     username: botInfo.username,
     id: botInfo.id,
@@ -211,26 +238,6 @@ async function startBot() {
   console.log(`\n✅ Bot is running: @${botInfo.username}\n`);
   console.log(`📱 Open Telegram and search for @${botInfo.username}`);
   console.log(`   or click: https://t.me/${botInfo.username}\n`);
-
-  // Start HTTP server for Railway health checks
-  const PORT = process.env.PORT || 3000;
-  const server = http.createServer((req, res) => {
-    if (req.url === '/health' || req.url === '/') {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        status: 'ok',
-        bot: botInfo.username,
-        uptime: process.uptime()
-      }));
-    } else {
-      res.writeHead(404);
-      res.end('Not found');
-    }
-  });
-
-  server.listen(PORT, () => {
-    console.log(`🌐 Health server running on port ${PORT}`);
-  });
 
   // Graceful shutdown
   process.once('SIGINT', () => {
