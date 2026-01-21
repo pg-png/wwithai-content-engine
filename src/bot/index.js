@@ -172,6 +172,12 @@ async function startBot() {
   // Launch bot with retry logic for 409 conflicts
   logger.info('Starting bot...');
 
+  // Initial delay to let old connections timeout on Railway deploys
+  if (process.env.RAILWAY_ENVIRONMENT) {
+    logger.info('Railway detected, waiting 30s for old connections to clear...');
+    await new Promise(r => setTimeout(r, 30000));
+  }
+
   const MAX_RETRIES = 5;
   const RETRY_DELAY = 10000; // 10 seconds
 
