@@ -8,6 +8,7 @@
  */
 
 const { Telegraf } = require('telegraf');
+const http = require('http');
 const { config, validateConfig } = require('../utils/config');
 const { logger } = require('../utils/logger');
 
@@ -184,6 +185,26 @@ async function startBot() {
     console.log(`\n✅ Bot is running: @${botInfo.username}\n`);
     console.log(`📱 Open Telegram and search for @${botInfo.username}`);
     console.log(`   or click: https://t.me/${botInfo.username}\n`);
+
+    // Start HTTP server for Railway health checks
+    const PORT = process.env.PORT || 3000;
+    const server = http.createServer((req, res) => {
+      if (req.url === '/health' || req.url === '/') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          status: 'ok',
+          bot: botInfo.username,
+          uptime: process.uptime()
+        }));
+      } else {
+        res.writeHead(404);
+        res.end('Not found');
+      }
+    });
+
+    server.listen(PORT, () => {
+      console.log(`🌐 Health server running on port ${PORT}`);
+    });
   } catch (error) {
     logger.error('Failed to start bot', { error: error.message });
     process.exit(1);
