@@ -178,7 +178,8 @@ async function startBot() {
   let botInfo;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      await bot.launch();
+      // Drop pending updates to avoid conflicts with old instances
+      await bot.launch({ dropPendingUpdates: true });
       botInfo = await bot.telegram.getMe();
       break; // Success!
     } catch (err) {
