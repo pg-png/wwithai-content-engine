@@ -141,6 +141,27 @@ function feedbackKeyboard(contentId) {
 }
 
 /**
+ * Image feedback keyboard - shown after image generation
+ * Allows user to approve the image or request a variation
+ * @param {string} contentId - Unique ID for the content
+ * @param {number} attempt - Current attempt number (for display)
+ */
+function imageFeedbackKeyboard(contentId, attempt = 1) {
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback('✅ C\'est bon!', `imgok:${contentId}`),
+    ],
+    [
+      Markup.button.callback('🔄 Réessayer (variation)', `imgretry:${contentId}:variation`),
+    ],
+    [
+      Markup.button.callback('🎨 Changer le style', `imgretry:${contentId}:style`),
+      Markup.button.callback('📐 Changer l\'angle', `imgretry:${contentId}:angle`),
+    ],
+  ]);
+}
+
+/**
  * Demo mode keyboard
  */
 function demoKeyboard() {
@@ -197,6 +218,7 @@ module.exports = {
   platformKeyboard,
   styleKeyboard,
   feedbackKeyboard,
+  imageFeedbackKeyboard,
   demoKeyboard,
   confirmPostKeyboard,
   mainMenuKeyboard,

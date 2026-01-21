@@ -10,6 +10,8 @@ const {
   handleDecorChoice,
   handleThemeSelection,
   handleAngleSelection,
+  handleImageOk,
+  handleImageRetry,
 } = require('./photo');
 const { updateContentEntry } = require('../../services/notion');
 const {
@@ -60,6 +62,12 @@ async function handleCallback(ctx) {
         break;
       case 'angle':
         await handleAngleSelection(ctx, params[0], params[1]);
+        break;
+      case 'imgok':
+        await handleImageOk(ctx, params[0]);
+        break;
+      case 'imgretry':
+        await handleImageRetry(ctx, params[0], params[1]);
         break;
       case 'approve':
         await handleApprove(ctx, params[0]);

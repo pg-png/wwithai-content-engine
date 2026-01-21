@@ -19,7 +19,8 @@ const {
   decorDoneKeyboard,
   themeKeyboard,
   angleKeyboard,
-  approvalKeyboard
+  approvalKeyboard,
+  imageFeedbackKeyboard
 } = require('../keyboards/approval');
 const { logger, logUserAction, logProgress } = require('../../utils/logger');
 const { config } = require('../../utils/config');
@@ -34,6 +35,7 @@ const SESSION_STATES = {
   AWAITING_THEME: 'awaiting_theme',
   AWAITING_ANGLE: 'awaiting_angle',
   PROCESSING: 'processing',
+  AWAITING_IMAGE_FEEDBACK: 'awaiting_image_feedback',
   PENDING_APPROVAL: 'pending_approval',
 };
 
@@ -351,7 +353,8 @@ async function processWithSettings(ctx, contentId) {
       analysis = {},
     } = result.data || {};
 
-    // Update stored content with results
+    // Update stored content with results - awaiting image feedback first
+    const attempt = (content.attempts || 0) + 1;
     pendingContent.set(contentId, {
       ...content,
       enhancedUrl,
@@ -359,7 +362,8 @@ async function processWithSettings(ctx, contentId) {
       hashtags,
       analysis,
       processingTimeMs,
-      status: SESSION_STATES.PENDING_APPROVAL,
+      attempts: attempt,
+      status: SESSION_STATES.AWAITING_IMAGE_FEEDBACK,
     });
 
     // Log to Notion
@@ -378,15 +382,17 @@ async function processWithSettings(ctx, contentId) {
     // Delete progress message
     await ctx.deleteMessage();
 
-    // Send enhanced image with caption
-    const fullCaption = formatCaption(caption, hashtags);
-
+    // Send enhanced image with feedback keyboard (not caption yet)
     await ctx.replyWithPhoto(
       { url: enhancedUrl },
       {
-        caption: `✨ *Voici ta photo transformée!*\n\n${fullCaption}\n\n⏱ Généré en ${Math.round(processingTimeMs / 1000)}s`,
+        caption: `✨ *Image générée* (tentative ${attempt})\n\n` +
+          `🎨 Thème: ${theme}\n` +
+          `📐 Angle: ${angle}\n` +
+          `⏱ Généré en ${Math.round(processingTimeMs / 1000)}s\n\n` +
+          `_Est-ce que cette image te convient?_`,
         parse_mode: 'Markdown',
-        reply_markup: approvalKeyboard(contentId).reply_markup,
+        reply_markup: imageFeedbackKeyboard(contentId, attempt).reply_markup,
       }
     );
 
@@ -462,6 +468,204 @@ function getDefaultHashtags(theme) {
 }
 
 /**
+ * Handle image approval - user likes the image, show caption
+ */
+async function handleImageOk(ctx, contentId) {
+  const content = pendingContent.get(contentId);
+  const userId = ctx.from.id;
+
+  if (!content) {
+    await ctx.answerCbQuery('⚠️ Session expirée');
+    return;
+  }
+
+  logUserAction(userId, 'image_approved', { contentId, attempts: content.attempts });
+
+  // Update status
+  content.status = SESSION_STATES.PENDING_APPROVAL;
+  pendingContent.set(contentId, content);
+
+  await ctx.answerCbQuery('✅ Image approuvée!');
+
+  // Now show the caption with approval keyboard
+  const fullCaption = formatCaption(content.caption, content.hashtags);
+
+  await ctx.editMessageCaption(
+    `✨ *Voici ta photo transformée!*\n\n${fullCaption}\n\n` +
+    `_Approuve pour copier la caption, ou modifie le texte._`,
+    {
+      parse_mode: 'Markdown',
+      reply_markup: approvalKeyboard(contentId).reply_markup,
+    }
+  );
+}
+
+/**
+ * Handle image retry - regenerate with variation
+ */
+async function handleImageRetry(ctx, contentId, retryType) {
+  const content = pendingContent.get(contentId);
+  const userId = ctx.from.id;
+
+  if (!content) {
+    await ctx.answerCbQuery('⚠️ Session expirée');
+    return;
+  }
+
+  logUserAction(userId, 'image_retry', { contentId, retryType, attempts: content.attempts });
+
+  // Handle different retry types
+  if (retryType === 'style') {
+    // Let user pick a new theme
+    content.status = SESSION_STATES.AWAITING_THEME;
+    pendingContent.set(contentId, content);
+
+    await ctx.answerCbQuery('🎨 Choisis un nouveau style');
+    await ctx.editMessageCaption(
+      '🎨 *Choisis un nouveau style:*\n\n_L\'image sera régénérée avec ce thème._',
+      {
+        parse_mode: 'Markdown',
+        reply_markup: themeKeyboard(contentId).reply_markup,
+      }
+    );
+    return;
+  }
+
+  if (retryType === 'angle') {
+    // Let user pick a new angle
+    content.status = SESSION_STATES.AWAITING_ANGLE;
+    pendingContent.set(contentId, content);
+
+    await ctx.answerCbQuery('📐 Choisis un nouvel angle');
+    await ctx.editMessageCaption(
+      '📐 *Choisis un nouvel angle:*\n\n_L\'image sera régénérée avec cet angle._',
+      {
+        parse_mode: 'Markdown',
+        reply_markup: angleKeyboard(contentId).reply_markup,
+      }
+    );
+    return;
+  }
+
+  // Default: variation - regenerate with same settings but add variation prompt
+  content.variationMode = true;
+  content.status = SESSION_STATES.PROCESSING;
+  pendingContent.set(contentId, content);
+
+  await ctx.answerCbQuery('🔄 Génération d\'une variation...');
+
+  // Delete the current image message
+  await ctx.deleteMessage();
+
+  // Reprocess with variation flag
+  await processWithVariation(ctx, contentId);
+}
+
+/**
+ * Process with variation - same settings but different output
+ */
+async function processWithVariation(ctx, contentId) {
+  const content = pendingContent.get(contentId);
+
+  if (!content) {
+    await ctx.reply('⚠️ Session expirée. Envoie une nouvelle photo.');
+    return;
+  }
+
+  const { userId, chatId, foodPhotoUrl, decorPhotos, theme, angle, restaurantName, attempts } = content;
+  const startTime = Date.now();
+  const hasDecorReference = decorPhotos.length > 0;
+
+  logUserAction(userId, 'variation_started', { contentId, theme, angle, attempt: attempts + 1 });
+
+  try {
+    // Send progress message
+    const progressMsg = await ctx.reply(
+      '🔄 *Génération d\'une variation...*\n\n' +
+      `Tentative ${attempts + 1}\n` +
+      '✨ Création d\'un nouveau setup...',
+      { parse_mode: 'Markdown' }
+    );
+
+    // Process through n8n workflow with variation flag
+    const result = await processImage({
+      imageUrl: foodPhotoUrl,
+      userId: String(userId),
+      chatId: String(chatId),
+      restaurantName,
+      theme,
+      angle,
+      decorPhotos,
+      hasDecorReference,
+      variation: true, // Signal to n8n to generate a variation
+      attemptNumber: attempts + 1,
+    });
+
+    const processingTimeMs = Date.now() - startTime;
+
+    if (!result.success) {
+      throw new Error(result.error || 'Processing failed');
+    }
+
+    const {
+      enhancedUrl = foodPhotoUrl,
+      caption = generateFallbackCaption(theme),
+      hashtags = getDefaultHashtags(theme),
+      analysis = {},
+    } = result.data || {};
+
+    // Update stored content
+    const newAttempt = attempts + 1;
+    pendingContent.set(contentId, {
+      ...content,
+      enhancedUrl,
+      caption,
+      hashtags,
+      analysis,
+      processingTimeMs,
+      attempts: newAttempt,
+      variationMode: false,
+      status: SESSION_STATES.AWAITING_IMAGE_FEEDBACK,
+    });
+
+    // Delete progress message
+    await ctx.telegram.deleteMessage(chatId, progressMsg.message_id);
+
+    // Send new image with feedback keyboard
+    await ctx.replyWithPhoto(
+      { url: enhancedUrl },
+      {
+        caption: `✨ *Nouvelle variation* (tentative ${newAttempt})\n\n` +
+          `🎨 Thème: ${theme}\n` +
+          `📐 Angle: ${angle}\n` +
+          `⏱ Généré en ${Math.round(processingTimeMs / 1000)}s\n\n` +
+          `_Est-ce que cette image te convient?_`,
+        parse_mode: 'Markdown',
+        reply_markup: imageFeedbackKeyboard(contentId, newAttempt).reply_markup,
+      }
+    );
+
+    logger.info('Variation generated successfully', {
+      userId,
+      contentId,
+      attempt: newAttempt,
+      processingTimeMs,
+    });
+  } catch (error) {
+    logger.error('Variation processing failed', {
+      userId,
+      contentId,
+      error: error.message,
+    });
+
+    await ctx.reply(
+      '😔 Erreur lors de la génération.\n\n' +
+      'Essaie à nouveau ou envoie une nouvelle photo.'
+    );
+  }
+}
+
+/**
  * Get pending content by ID
  */
 function getPendingContent(contentId) {
@@ -516,6 +720,8 @@ module.exports = {
   handleDecorChoice,
   handleThemeSelection,
   handleAngleSelection,
+  handleImageOk,
+  handleImageRetry,
   getPendingContent,
   updatePendingContent,
   deletePendingContent,
