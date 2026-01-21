@@ -193,37 +193,57 @@ async function startBot() {
   // Start the bot
   // ============================================
 
-  // Launch bot with retry logic for 409 conflicts
   logger.info('Starting bot...');
 
-  // Initial delay to let old connections timeout on Railway deploys
-  if (process.env.RAILWAY_ENVIRONMENT) {
-    logger.info('Railway detected, waiting 30s for old connections to clear...');
-    await new Promise(r => setTimeout(r, 30000));
-  }
-
-  const MAX_RETRIES = 5;
-  const RETRY_DELAY = 10000; // 10 seconds
-
   let botInfo;
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      // Drop pending updates to avoid conflicts with old instances
-      await bot.launch({ dropPendingUpdates: true });
-      botInfo = await bot.telegram.getMe();
-      break; // Success!
-    } catch (err) {
-      if (err.message.includes('409') && attempt < MAX_RETRIES) {
-        logger.warn(`Bot conflict (attempt ${attempt}/${MAX_RETRIES}), waiting ${RETRY_DELAY/1000}s...`);
-        await new Promise(r => setTimeout(r, RETRY_DELAY));
+
+  // Use webhook mode on Railway (avoids 409 conflicts with zero-downtime deploys)
+  if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+    const webhookDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
+    const webhookPath = `/webhook/${config.TELEGRAM_BOT_TOKEN.split(':')[0]}`;
+    const webhookUrl = `https://${webhookDomain}${webhookPath}`;
+
+    logger.info('Railway detected, using webhook mode', { domain: webhookDomain });
+
+    // Set webhook on Telegram
+    await bot.telegram.setWebhook(webhookUrl, { drop_pending_updates: true });
+    botInfo = await bot.telegram.getMe();
+
+    // Replace the HTTP server handler to include webhook
+    const originalHandler = server.listeners('request')[0];
+    server.removeAllListeners('request');
+    server.on('request', (req, res) => {
+      if (req.url === webhookPath && req.method === 'POST') {
+        // Parse POST body and handle Telegram update
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', async () => {
+          try {
+            const update = JSON.parse(body);
+            await bot.handleUpdate(update);
+            res.writeHead(200);
+            res.end('ok');
+          } catch (err) {
+            logger.error('Webhook error', { error: err.message });
+            res.writeHead(500);
+            res.end('error');
+          }
+        });
       } else {
-        throw err;
+        originalHandler(req, res);
       }
-    }
+    });
+
+    logger.info('Webhook mode active', { webhookUrl });
+  } else {
+    // Local development: use long polling
+    logger.info('Local mode, using long polling...');
+    await bot.launch({ dropPendingUpdates: true });
+    botInfo = await bot.telegram.getMe();
   }
 
   if (!botInfo) {
-    logger.error('Failed to start bot after all retries');
+    logger.error('Failed to start bot');
     process.exit(1);
   }
 
