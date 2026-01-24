@@ -68,7 +68,7 @@ const config = {
   // n8n
   N8N_API_KEY: process.env.N8N_API_KEY || fileEnv.N8N_API_KEY,
   N8N_URL: process.env.N8N_URL || fileEnv.N8N_URL || 'https://hanumet.app.n8n.cloud',
-  N8N_WEBHOOK_PATH: '/webhook/content-creator',  // CrowdMagic - add people to restaurants
+  N8N_WEBHOOK_PATH: '/webhook/content-engine',
 
   // Notion
   NOTION_API_KEY: process.env.NOTION_API_KEY || fileEnv.NOTION_API_KEY,

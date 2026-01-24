@@ -1,62 +1,53 @@
 /**
  * Start Command Handler
- * CrowdMagic - Add AI people to restaurant photos
+ * Handles /start and onboarding flow
  */
 
 const { mainMenuKeyboard } = require('../keyboards/approval');
 const { logger, logUserAction } = require('../../utils/logger');
 
-// Welcome message for CrowdMagic
+// Welcome message in Quebec French
 const WELCOME_MESSAGE = `
-👋 *Bienvenue sur CrowdMagic by WwithAI!*
+👋 *Bienvenue sur Kai, ton assistant content!* (v2.0)
 
-Je remplis ton restaurant VIDE avec des clients générés par l'IA.
+Je transforme tes photos de plats en posts Instagram professionnels.
 
 📸 *Comment ça marche?*
-1. Envoie-moi une photo de ton resto VIDE
-2. Choisis un style de clientèle:
-   • Elegant Diners (soirée chic)
-   • Busy Lunch (midi animé)
-   • Romantic Evening (dîner romantique)
-   • Group Celebration (fête/événement)
-3. L'IA ajoute les clients (~90 sec)
-4. Tu récupères l'image et tu postes!
+1. Envoie-moi une photo de ton plat
+2. Ajoute des photos de ton décor _(optionnel)_
+3. Choisis l'ambiance et l'angle
+4. Tu approuves → Prêt à poster!
 
-✨ *Parfait pour le marketing quand tu n'as pas de vraies photos.*
+✨ *C'est vraiment simple.*
 
-Envoie ta première photo! 📷
+Envoie-moi ta première photo pour voir la magie! 🪄
 `;
 
 const HELP_MESSAGE = `
-❓ *Aide - CrowdMagic Bot*
+❓ *Aide - Kai Content Bot*
 
-*Commandes:*
+*Commandes disponibles:*
 /start - Redémarrer le bot
+/demo - Voir des exemples
 /help - Afficher cette aide
 
 *Comment utiliser:*
-📸 Envoie une photo de ton resto VIDE
-👥 Choisis le style de clients
-⏳ Attends ~90 secondes
-📥 Télécharge l'image
+📸 Envoie une photo → Je génère ton post
+✅ Approuve → C'est prêt!
+✏️ Modifie → Je retravaille
+❌ Refuse → On recommence
 
-*Conseils pour de meilleurs résultats:*
-• Photo de qualité (bonne lumière)
-• Restaurant vide (pas de vraies personnes)
-• Angle large (montre l'espace)
-• Photo horizontale de préférence
-
-*Styles disponibles:*
-👔 Elegant Diners - Couples chics en soirée
-☕ Busy Lunch - Professionnels à midi
-💕 Romantic Evening - Ambiance date night
-🎉 Group Celebration - Fête ou événement
+*Tips pour de meilleurs résultats:*
+• Bonne lumière naturelle
+• Plat bien centré
+• Arrière-plan épuré
+• Photo nette (pas floue)
 
 *Support:*
 📧 support@wwithai.com
-📱 @AIrestohub sur Instagram
+📱 @wwithai sur Instagram
 
-Fait avec ❤️ par WwithAI
+Fait avec ❤️ par WWITHai
 `;
 
 /**
@@ -70,10 +61,12 @@ async function handleStart(ctx) {
   logger.info(`New user started: ${firstName} (${userId})`);
 
   try {
+    // Send welcome message with user's name
     const personalizedWelcome = WELCOME_MESSAGE.replace('Bienvenue', `Salut ${firstName}! Bienvenue`);
 
     await ctx.replyWithMarkdown(personalizedWelcome, mainMenuKeyboard());
 
+    // Track new user (could send to analytics)
     logger.info('Welcome message sent', { userId, firstName });
   } catch (error) {
     logger.error('Error in start handler', { error: error.message, userId });
@@ -103,12 +96,13 @@ async function handleUnknown(ctx) {
   const userId = ctx.from.id;
   const text = ctx.message?.text || '';
 
+  // Ignore if it's a regular message (not a command)
   if (!text.startsWith('/')) return;
 
   logUserAction(userId, 'unknown_command', { command: text });
 
   await ctx.reply(
-    `Commande inconnue: ${text}\n\nEssaie /help pour voir les commandes.`
+    `Je ne connais pas cette commande: ${text}\n\nEssaie /help pour voir les commandes disponibles.`
   );
 }
 
