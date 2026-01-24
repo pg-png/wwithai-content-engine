@@ -17,38 +17,25 @@ const RETRY_DELAY_MS = 2000;
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Process an image through the n8n workflow
+ * Process an image through the n8n CrowdMagic workflow
  * @param {Object} params - Processing parameters
- * @param {string} params.imageUrl - URL of the image to process
+ * @param {string} params.imageBase64 - Base64 encoded image (without data:image prefix)
+ * @param {string} params.prompt - The prompt describing what to add
  * @param {string} params.userId - Telegram user ID
- * @param {string} params.chatId - Telegram chat ID
- * @param {string} [params.restaurantName] - Optional restaurant name for branding
- * @param {string} [params.theme] - Theme for image enhancement (brunch/lunch/dinner/event/royal)
- * @param {string} [params.angle] - Camera angle (45deg/overhead/eyelevel/threequarter)
- * @param {Array} [params.decorPhotos] - Array of decor photo URLs for reference
- * @param {boolean} [params.hasDecorReference] - Whether decor photos were provided
- * @returns {Promise<Object>} Processing result
+ * @returns {Promise<Object>} Processing result with imageUrl
  */
 async function processImage({
-  imageUrl,
+  imageBase64,
+  prompt,
   userId,
-  chatId,
-  restaurantName = 'Restaurant',
-  theme = 'dinner',
-  angle = '45deg',
-  decorPhotos = [],
-  hasDecorReference = false
 }) {
   const webhookUrl = getWebhookUrl();
   const startTime = Date.now();
 
-  logger.info(`Processing image for user ${userId}`, {
+  logger.info(`Processing CrowdMagic for user ${userId}`, {
     webhookUrl,
-    theme,
-    angle,
-    hasDecorReference,
-    decorCount: decorPhotos.length,
-    imageUrl: imageUrl.substring(0, 50) + '...'
+    promptLength: prompt.length,
+    imageSize: Math.round(imageBase64.length / 1024) + 'KB'
   });
 
   let lastError;
@@ -58,40 +45,45 @@ async function processImage({
       const response = await axios.post(
         webhookUrl,
         {
-          imageUrl,
-          userId,
-          chatId,
-          restaurantName,
-          theme,
-          angle,
-          decorPhotos,
-          hasDecorReference,
-          timestamp: new Date().toISOString(),
+          image: imageBase64,  // CrowdMagic expects 'image' field
+          prompt: prompt,
+          style: 'realistic',
         },
         {
           timeout: config.WEBHOOK_TIMEOUT,
           headers: {
             'Content-Type': 'application/json',
-            'User-Agent': 'WWITHai-Content-Engine/1.0',
+            'User-Agent': 'WWITHai-CrowdMagic-Bot/1.0',
           },
         }
       );
 
       const durationMs = Date.now() - startTime;
-      logApiCall('n8n', 'content-engine', durationMs, true);
+      logApiCall('n8n', 'crowdmagic', durationMs, true);
 
-      logger.info('Webhook response received', {
+      logger.info('CrowdMagic response received', {
         status: response.status,
         durationMs,
-        hasEnhancedImage: !!response.data?.enhancedUrl,
-        hasCaption: !!response.data?.caption,
+        success: response.data?.success,
+        hasImageUrl: !!response.data?.imageUrl,
       });
 
-      return {
-        success: true,
-        data: response.data,
-        durationMs,
-      };
+      // CrowdMagic returns: { success: true, imageUrl: "...", status: "success" }
+      if (response.data?.success && response.data?.imageUrl) {
+        return {
+          success: true,
+          imageUrl: response.data.imageUrl,
+          durationMs,
+        };
+      } else {
+        // Still processing or failed
+        return {
+          success: false,
+          error: response.data?.debug?.failMsg || response.data?.status || 'Processing failed',
+          status: response.data?.status,
+          durationMs,
+        };
+      }
     } catch (error) {
       lastError = error;
       const durationMs = Date.now() - startTime;
@@ -124,7 +116,7 @@ async function processImage({
   }
 
   // All retries exhausted
-  logApiCall('n8n', 'content-engine', Date.now() - startTime, false);
+  logApiCall('n8n', 'crowdmagic', Date.now() - startTime, false);
 
   return {
     success: false,

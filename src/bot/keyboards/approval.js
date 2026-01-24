@@ -4,7 +4,6 @@
  */
 
 const { Markup } = require('telegraf');
-const { getAllThemes } = require('../../prompts/themes');
 
 /**
  * Decor upload prompt keyboard - shown after food photo
@@ -34,23 +33,11 @@ function decorDoneKeyboard(contentId) {
 }
 
 /**
- * Theme selection keyboard shown after decor step
- * @param {string} contentId - Unique ID for the photo session
+ * Theme selection keyboard (legacy - not used in CrowdMagic)
+ * @deprecated Use crowdMagicPresetsKeyboard instead
  */
 function themeKeyboard(contentId) {
-  const themes = getAllThemes();
-
-  // First row: Brunch, Lunch, Dinner
-  const row1 = themes.slice(0, 3).map(t =>
-    Markup.button.callback(`${t.emoji} ${t.label}`, `theme:${contentId}:${t.key}`)
-  );
-
-  // Second row: Event, Royal Thai
-  const row2 = themes.slice(3).map(t =>
-    Markup.button.callback(`${t.emoji} ${t.label}`, `theme:${contentId}:${t.key}`)
-  );
-
-  return Markup.inlineKeyboard([row1, row2]);
+  return Markup.inlineKeyboard([]);
 }
 
 /**
@@ -162,6 +149,43 @@ function imageFeedbackKeyboard(contentId, attempt = 1) {
 }
 
 /**
+ * CrowdMagic presets keyboard - shown after receiving restaurant photo
+ * These are the 4 presets from the web app
+ * @param {string} contentId - Unique ID for the photo session
+ */
+function crowdMagicPresetsKeyboard(contentId) {
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback('👔 Elegant Diners', `preset:${contentId}:elegant`),
+    ],
+    [
+      Markup.button.callback('☕ Busy Lunch', `preset:${contentId}:lunch`),
+    ],
+    [
+      Markup.button.callback('💕 Romantic Evening', `preset:${contentId}:romantic`),
+    ],
+    [
+      Markup.button.callback('🎉 Group Celebration', `preset:${contentId}:celebration`),
+    ],
+  ]);
+}
+
+/**
+ * Get the full prompt for a CrowdMagic preset
+ * @param {string} presetKey - The preset key
+ * @returns {string} The full prompt
+ */
+function getPresetPrompt(presetKey) {
+  const presets = {
+    elegant: "Transform this restaurant photo by adding elegant, sophisticated diners enjoying their meal. Show couples and small groups in upscale attire, engaged in pleasant conversation. Warm ambient lighting, realistic photography style. The people should look natural and blend seamlessly with the existing environment.",
+    lunch: "Add a vibrant lunch crowd to this restaurant space. Show business professionals and casual diners enjoying their meals. Natural daylight, lively atmosphere with realistic people in smart casual attire. Maintain the original ambiance while making it feel popular and welcoming.",
+    romantic: "Transform this into a romantic evening scene with couples enjoying intimate dinners. Soft candlelight ambiance, elegant attire, wine glasses raised. Create a warm, luxurious atmosphere perfect for date night marketing.",
+    celebration: "Add a festive group celebration to this space - a birthday party or special occasion with happy guests, some raising glasses in a toast. Mixed ages, joyful expressions, celebratory atmosphere while maintaining the restaurant's authentic style.",
+  };
+  return presets[presetKey] || presets.elegant;
+}
+
+/**
  * Demo mode keyboard
  */
 function demoKeyboard() {
@@ -219,6 +243,8 @@ module.exports = {
   styleKeyboard,
   feedbackKeyboard,
   imageFeedbackKeyboard,
+  crowdMagicPresetsKeyboard,
+  getPresetPrompt,
   demoKeyboard,
   confirmPostKeyboard,
   mainMenuKeyboard,

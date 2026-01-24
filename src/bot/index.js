@@ -21,10 +21,10 @@ const { demoKeyboard, mainMenuKeyboard } = require('./keyboards/approval');
 // ASCII art banner
 const BANNER = `
 ╔═══════════════════════════════════════════════════╗
-║     🍽️  WWITHai Content Engine v1.0  🍽️          ║
+║     🪄  CrowdMagic by WwithAI  🪄                 ║
 ║                                                   ║
-║     Transform restaurant photos into             ║
-║     Instagram-ready posts in 60 seconds          ║
+║     Add AI-generated people to your              ║
+║     empty restaurant photos!                     ║
 ╚═══════════════════════════════════════════════════╝
 `;
 
@@ -99,11 +99,15 @@ async function startBot() {
   bot.command('demo', async (ctx) => {
     logger.info('Demo command received', { userId: ctx.from.id });
 
-    await ctx.replyWithMarkdown(
-      `🎨 *Mode Demo*\n\n` +
-      `Voici des exemples de posts que je peux générer.\n` +
-      `Choisis un plat pour voir le résultat:`,
-      demoKeyboard()
+    await ctx.reply(
+      '🪄 *CrowdMagic Demo*\n\n' +
+      'Envoie-moi une photo de ton restaurant VIDE et je vais y ajouter des clients!\n\n' +
+      '4 styles disponibles:\n' +
+      '• 👔 Elegant Diners\n' +
+      '• ☕ Busy Lunch\n' +
+      '• 💕 Romantic Evening\n' +
+      '• 🎉 Group Celebration',
+      { parse_mode: 'Markdown' }
     );
   });
 
@@ -137,13 +141,14 @@ async function startBot() {
 
   // Handle keyboard buttons
   bot.hears('📸 Nouveau post', (ctx) => {
-    ctx.reply('📸 Envoie-moi une photo de ton plat!');
+    ctx.reply('📸 Envoie-moi une photo de ton restaurant VIDE!');
   });
 
   bot.hears('🎨 Demo', async (ctx) => {
-    await ctx.replyWithMarkdown(
-      `🎨 *Mode Demo*\n\nChoisis un plat:`,
-      demoKeyboard()
+    await ctx.reply(
+      '📸 *Envoie une photo de ton restaurant*\n\n' +
+      'Je vais y ajouter des clients avec l\'IA!',
+      { parse_mode: 'Markdown' }
     );
   });
 
@@ -183,8 +188,8 @@ async function startBot() {
 
     // Regular text message - prompt for photo
     await ctx.reply(
-      '📸 Envoie-moi une photo de ton plat pour créer ton post!\n\n' +
-      'Ou tape /demo pour voir des exemples.',
+      '📸 Envoie-moi une photo de ton restaurant VIDE!\n\n' +
+      'Je vais y ajouter des clients avec l\'IA.',
       mainMenuKeyboard()
     );
   });
